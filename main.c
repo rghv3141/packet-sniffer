@@ -5,6 +5,8 @@
 #include <sys/socket.h>
 #include <net/if.h>
 #include <arpa/inet.h>
+#include <netinet/ip.h>
+#include <linux/ipv6.h>
 
 void read_packet(int);
 int process_packet(uint8_t *, ssize_t);
@@ -65,8 +67,38 @@ int process_packet(uint8_t *buf, ssize_t n)
 {
 	struct ethhdr *eth = (struct ethhdr *)buf;
 
-	printf("src: %02x:%02x:%02x:%02x:%02x:%02x\ndst: %02x:%02x:%02x:%02x:%02x:%02x\nproto: 0x%04x\n",eth->h_source[0], eth->h_source[1], eth->h_source[2], eth->h_source[3], eth->h_source[4], eth->h_source[5], eth->h_dest[0], eth->h_dest[1], eth->h_dest[2], eth->h_dest[3], eth->h_dest[4], eth->h_dest[5], ntohs(eth->h_proto));
+	printf("src mac: %02x:%02x:%02x:%02x:%02x:%02x -> dst mac: %02x:%02x:%02x:%02x:%02x:%02x\n",eth->h_source[0], eth->h_source[1], eth->h_source[2], eth->h_source[3], eth->h_source[4], eth->h_source[5], eth->h_dest[0], eth->h_dest[1], eth->h_dest[2], eth->h_dest[3], eth->h_dest[4], eth->h_dest[5]);
 	
+	if(ntohs(eth->h_proto) == 0x0800) {
+		uint8_t *ip = buf + sizeof(struct ethhdr);
+		struct iphdr *ip_hdr = (struct iphdr *)ip;
+		
+		char src[INET_ADDRSTRLEN];
+		if(inet_ntop(AF_INET, &ip_hdr->saddr, src, INET_ADDRSTRLEN) == NULL) {
+			perror("inet_ntop() ipv4");
+		}
+		else printf("src IPv4: %s -> ", src);
+
+		char dest[INET_ADDRSTRLEN];
+		if(inet_ntop(AF_INET, &ip_hdr->daddr, dest, INET_ADDRSTRLEN) == NULL) {
+			perror("inet_ntop()");
+                }
+                else printf("dest IPv4: %s\n", dest);
+
+	}
+
+	else if (ntohs(eth->h_proto) == 0x0806) {
+		struct ipv6hdr *ip6_h = (struct ipv6hdr *)(buf + sizeof(struct ethhdr));
+
+		char src[INET6_ADDRSTRLEN];
+		if(inet_ntop(AF_INET6, &ip6_h->saddr, src, sizeof(src)) == NULL) perror("inet_ntop ipv6");
+		else printf("src IPv6: %s -> ", src);
+
+		char dest[INET6_ADDRSTRLEN];
+                if(inet_ntop(AF_INET6, &ip6_h->daddr, dest, sizeof(dest)) == NULL) perror("inet_ntop ipv6");
+                else printf("dest IPv6: %s\n", dest); 
+	} 	
+
 	return 0;
 }
 
