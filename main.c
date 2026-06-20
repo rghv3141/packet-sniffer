@@ -13,15 +13,7 @@
 #include <netinet/udp.h>
 #include <sys/types.h>
 #include <linux/filter.h>
-
-void read_packet(int);
-int process_packet(uint8_t *, ssize_t);
-void parse_eth(struct ethhdr *);
-void parse_ipv4(struct ethhdr *, uint8_t *);
-void parse_ipv6(struct ethhdr *, uint8_t *);
-void parse_tcp(uint8_t *);
-void parse_udp(uint8_t *);
-void bpf_filter(int);
+#include <main.h>
 
 int main(int argc, char **argv)
 {
@@ -77,16 +69,19 @@ void read_packet(int sock)
 
 int process_packet(uint8_t *buf, ssize_t n)
 {
+	struct packet_info *pkt;
 	struct ethhdr *eth = (struct ethhdr *)buf;
 	parse_eth(eth);
 //	printf("0x%04x\n",ntohs(eth->h_proto));
 
 	if(ntohs(eth->h_proto) == 0x0800) {
-		parse_ipv4(eth, buf);
+		pkt->ipv6 = 0;
+		parse_ipv4(eth, buf, pkt, n);
 	}
 
 	else if (ntohs(eth->h_proto) == 0x86dd) {
-		parse_ipv6(eth, buf);
+		pkt->ipv6 = 1;
+		parse_ipv6(eth, buf, pkt, n);
 	}
 	return 0;
 }
@@ -98,7 +93,8 @@ void parse_eth(struct ethhdr *eth) {
 }
 
 
-void parse_ipv4(struct ethhdr *eth, uint8_t buf[]) {
+void parse_ipv4(struct ethhdr *eth, uint8_t buf[], struct packet_info *pkt, ssize_t n) {
+	
 	uint8_t *ip = buf + sizeof(struct ethhdr);
 	struct iphdr *ip_hdr = (struct iphdr *)ip;
 	uint8_t *p = buf + sizeof(struct ethhdr) + ip_hdr->ihl*4;
@@ -108,14 +104,18 @@ void parse_ipv4(struct ethhdr *eth, uint8_t buf[]) {
 	}
 	else printf("src IPv4: %s -> ", src);
 
+	pkt->ipv4_src = ip_hdr->saddr;
+
 	char dest[INET_ADDRSTRLEN];
 	if(inet_ntop(AF_INET, &ip_hdr->daddr, dest, INET_ADDRSTRLEN) == NULL) {
 		perror("inet_ntop()");
         }
         else printf("dest IPv4: %s\n", dest);
+	
+	pkt->ipv4_dest = ip_hdr->daddr;	
 
 	if(ip_hdr->protocol == 6) {
-		parse_tcp(p);
+		parse_tcp(p, pkt, n);
 	}
 	if(ip_hdr->protocol == 17) {
 		parse_udp(p);
@@ -123,34 +123,40 @@ void parse_ipv4(struct ethhdr *eth, uint8_t buf[]) {
 }
 
 
-void parse_ipv6(struct ethhdr *eth, uint8_t *buf) {
+void parse_ipv6(struct ethhdr *eth, uint8_t *buf, struct packet_info *pkt, ssize_t n) {
     	struct ipv6hdr *ip6_h = (struct ipv6hdr *)(buf + sizeof(struct ethhdr));
 	uint8_t *p = buf + sizeof(struct ethhdr) + sizeof(struct ipv6hdr);
 	char src[INET6_ADDRSTRLEN];
 	if(inet_ntop(AF_INET6, &ip6_h->saddr, src, sizeof(src)) == NULL) perror("inet_ntop ipv6");
 	else printf("src IPv6: %s -> ", src);
 
+	pkt->ipv6_src = ip6_h->saddr;
+
 	char dest[INET6_ADDRSTRLEN];
         if(inet_ntop(AF_INET6, &ip6_h->daddr, dest, sizeof(dest)) == NULL) perror("inet_ntop ipv6");
         else printf("dest IPv6: %s\n", dest);
+	
+	pkt->ipv6_dst = ip6_h->daddr;
 
 	if(ip6_h->nexthdr == 6) {
-		parse_tcp(p);
+		parse_tcp(p, pkt, n);
 	}
 	if(ip6_h->nexthdr == 17) {
 		parse_udp(p);
 	}
 }
 
-void parse_tcp(uint8_t *tcp) 
+void parse_tcp(uint8_t *tcp, struct packet_info *pkt, ssize_t n) 
 {
 	struct tcphdr *tcp_h = (struct tcphdr *)tcp;
 
-	uint16_t src_port = ntohs(tcp_h->source);
-	uint16_t dest_port = ntohs(tcp_h->dest);
+	pkt->src_port = ntohs(tcp_h->source);
+	pkt->dst_port = ntohs(tcp_h->dest);
 
-	printf("TCP src port: %d -> ", src_port);
-	printf("TCP dest port: %d\n\n", dest_port);
+	printf("TCP src port: %d -> ", pkt->src_port);
+	printf("TCP dest port: %d\n\n", pkt->dst_port);
+		
+	update_tcp_conn(tcp, pkt, n);
 }
 
 void parse_udp(uint8_t *udp) 
