@@ -1,20 +1,20 @@
-#include <main.h>
+#include "main.h"
 
-enum tcp_state {
-	TCP_SYN_SENT,
-	TCP_SYN_RECEIVED,
-	TCP_ESTABLISHED,
-	TCP_FIN_WAIT,
-	TCP_CLOSED
+enum conn_state {
+	CONN_SYN_SENT,
+	CONN_SYN_RECEIVED,
+	CONN_ESTABLISHED,
+	CONN_FIN_WAIT,
+	CONN_CLOSED
 };
 
 struct tcp_connection {
 	struct packet_info key;
-	enum tcp_state state;
+	enum conn_state state;
 	uint64_t bytes;
 };
 
 struct tcp_connection *find_connection(struct packet_info *);
 void update_tcp_conn(struct tcphdr *, struct packet_info *, ssize_t);
-struct tcp_connection *create_connection(struct packet_info *, ssize_t);
-
+struct tcp_connection *create_connection(struct packet_info *, struct tcphdr *, ssize_t);
+char *tcp_state_string(enum conn_state);

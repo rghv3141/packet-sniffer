@@ -1,5 +1,6 @@
-#include <tcp_state.h>
-
+#include "tcp_state.h"
+#include <string.h>
+#include <stdio.h>
 #define MAX_CONNECTIONS 128
 
 struct tcp_connection connections[MAX_CONNECTIONS];
@@ -41,49 +42,76 @@ struct tcp_connection *create_connection(struct packet_info *pkt, struct tcphdr 
 	conn->bytes = (uint64_t)n;
 	
 	if (tcp->syn && !tcp->ack)
-		conn->state = TCP_SYN_SENT;
+		conn->state = CONN_SYN_SENT;
 	else if (tcp->syn && tcp->ack)
-		conn->state = TCP_SYN_RECIEVED;
+		conn->state = CONN_SYN_RECEIVED;
 	else 
-		conn->state = TCP_ESTABLISHED;
+		conn->state = CONN_ESTABLISHED;
+	printf("NEW CONNECTION\n");
+	printf("CONNECTION count = %ld\n\n", connection_count);
 	return conn;
+}
+
+char *tcp_state_string(enum conn_state state) {
+	switch(state) {
+		case CONN_SYN_SENT:
+			return "SYN_SENT";
+		case CONN_SYN_RECEIVED:
+			return "SYN_RECEIVED";
+		case CONN_ESTABLISHED:
+			return "ESTABLISHED";
+		case CONN_FIN_WAIT:
+			return "FIN_WAIT";
+		case CONN_CLOSED:
+			return "CLOSED";
+		default:
+			return "UNKNOWN";
+	}
 }
 void update_tcp_conn(struct tcphdr *tcp, struct packet_info *pkt, ssize_t n) 
 {
-	struct tcp_connection *conn;
-	
+//	printf("INSIDE UPDATE\n");
+//	printf("flags: SYN=%d ACK=%d FIN=%d RST=%d\n", tcp->syn, tcp->ack, tcp->fin, tcp->rst);
+//	fflush(stdout);
+	struct tcp_connection connection;
+	struct tcp_connection *conn = &connection;
 	conn = find_connection(pkt);
-
 	if(conn == NULL) {
 		conn = create_connection(pkt, tcp, n);
 	} else {
+		printf("FOUND State\n\n");
+		enum conn_state old_state = conn->state;
 		conn->bytes += n;
-		switch (conn->state) {
+		switch (old_state) {
 
-        		case TCP_STATE_SYN_SENT:
+        		case CONN_SYN_SENT:
                 		if (tcp->syn && tcp->ack)
-                        		conn->state = TCP_STATE_SYN_RECEIVED;
+                        		conn->state = CONN_SYN_RECEIVED;
                 		break;
 
-        		case TCP_STATE_SYN_RECEIVED:
+        		case CONN_SYN_RECEIVED:
                 		if (tcp->ack && !tcp->syn)
-                        		conn->state = TCP_STATE_ESTABLISHED;
+                        		conn->state = CONN_ESTABLISHED;
                 		break;
 
-        		case TCP_STATE_ESTABLISHED:
+        		case CONN_ESTABLISHED:
                 		if (tcp->fin)
-                        		conn->state = TCP_STATE_FIN_WAIT;
+                        		conn->state = CONN_FIN_WAIT;
                 		else if (tcp->rst)
-                        		conn->state = TCP_STATE_CLOSED;
+                        		conn->state = CONN_CLOSED;
                 		break;
 
-        		case TCP_STATE_FIN_WAIT:
+        		case CONN_FIN_WAIT:
                 		if (tcp->ack)
-                        		conn->state = TCP_STATE_CLOSED;
+                        		conn->state = CONN_CLOSED;
                			break;
 				
-        		case TCP_STATE_CLOSED:
+        		case CONN_CLOSED:
                 		break;
 		}
+	//	if(old_state != conn->state) {
+			printf("connection state changed: %s -> %s\n\n", tcp_state_string(old_state), tcp_state_string(conn->state));
+	//	} 
+		
 	}
 }

@@ -13,12 +13,14 @@
 #include <netinet/udp.h>
 #include <sys/types.h>
 #include <linux/filter.h>
-#include <main.h>
+#include "main.h"
+#include "tcp_state.h"
 
 int main(int argc, char **argv)
 {
 	int sock, status;
-	char *opt = argv[1];
+	char *opt = argv[1]; 
+	
 	sock = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_IP));
 	if (sock < 0) {
 		perror("socket");
@@ -47,7 +49,6 @@ int main(int argc, char **argv)
 	}
 	bpf_filter(sock); 
 	read_packet(sock);
-
 	return 0;
 }
 
@@ -68,8 +69,9 @@ void read_packet(int sock)
 }
 
 int process_packet(uint8_t *buf, ssize_t n)
-{
-	struct packet_info *pkt;
+{	
+	struct packet_info info;
+	struct packet_info *pkt = &info;
 	struct ethhdr *eth = (struct ethhdr *)buf;
 	parse_eth(eth);
 //	printf("0x%04x\n",ntohs(eth->h_proto));
@@ -124,7 +126,8 @@ void parse_ipv4(struct ethhdr *eth, uint8_t buf[], struct packet_info *pkt, ssiz
 
 
 void parse_ipv6(struct ethhdr *eth, uint8_t *buf, struct packet_info *pkt, ssize_t n) {
-    	struct ipv6hdr *ip6_h = (struct ipv6hdr *)(buf + sizeof(struct ethhdr));
+    	
+	struct ipv6hdr *ip6_h = (struct ipv6hdr *)(buf + sizeof(struct ethhdr));
 	uint8_t *p = buf + sizeof(struct ethhdr) + sizeof(struct ipv6hdr);
 	char src[INET6_ADDRSTRLEN];
 	if(inet_ntop(AF_INET6, &ip6_h->saddr, src, sizeof(src)) == NULL) perror("inet_ntop ipv6");
@@ -154,9 +157,9 @@ void parse_tcp(uint8_t *tcp, struct packet_info *pkt, ssize_t n)
 	pkt->dst_port = ntohs(tcp_h->dest);
 
 	printf("TCP src port: %d -> ", pkt->src_port);
-	printf("TCP dest port: %d\n\n", pkt->dst_port);
+	printf("TCP dest port: %d\n", pkt->dst_port);
 		
-	update_tcp_conn(tcp, pkt, n);
+	update_tcp_conn(tcp_h, pkt, n);
 }
 
 void parse_udp(uint8_t *udp) 
@@ -177,11 +180,11 @@ void bpf_filter(int sock)
         { 0x15,  0,  3, 0x000086dd },	//1	compare with Ipv6		
         { 0x30,  0,  0, 0x00000014 },	//2	load protocol for ipv6
         { 0x15,  5,  0, 0x00000006 },	//3	for TCP
-        { 0x15,  4,  5, 0x00000011 },	//4	for UDP if not UDP, reject
+        { 0x15,  5,  5, 0x00000011 },	//4	for UDP if not UDP, reject
         { 0x15,  0,  4, 0x00000800 },	//5	check if Ipv4
         { 0x30,  0,  0, 0x00000017 },	//6	Load protocol
         { 0x15,  1,  0, 0x00000006 },	//7	for tcp
-	{ 0x15,  0,  1, 0x00000011 },	//8	for udp 
+	{ 0x15,  1,  1, 0x00000011 },	//8	for udp 
 	{ 0x06,  0,  0, 0x0000ffff },	//9	accept packet
 	{ 0x06,  0,  0, 0x00000000 },	//10	drop packet
 	};

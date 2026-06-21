@@ -30,8 +30,8 @@ struct packet_info {
 void read_packet(int);
 int process_packet(uint8_t *, ssize_t);
 void parse_eth(struct ethhdr *);
-void parse_ipv4(struct ethhdr *, uint8_t *, ssize_t);
-void parse_ipv6(struct ethhdr *, uint8_t *, ssize_t);
+void parse_ipv4(struct ethhdr *, uint8_t *, struct packet_info *, ssize_t);
+void parse_ipv6(struct ethhdr *, uint8_t *, struct packet_info *, ssize_t);
 void parse_tcp(uint8_t *, struct packet_info *, ssize_t);
 void parse_udp(uint8_t *);
 void bpf_filter(int);
