@@ -24,7 +24,6 @@ struct packet_info {
 	uint16_t src_port;
 	uint16_t dst_port;
 
-	uint8_t tcp_flags;
 };	
 
 void read_packet(int);
@@ -35,3 +34,4 @@ void parse_ipv6(struct ethhdr *, uint8_t *, struct packet_info *, ssize_t);
 void parse_tcp(uint8_t *, struct packet_info *, ssize_t);
 void parse_udp(uint8_t *);
 void bpf_filter(int);
+void sigint_handler(int);

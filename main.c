@@ -13,11 +13,14 @@
 #include <netinet/udp.h>
 #include <sys/types.h>
 #include <linux/filter.h>
+#include <signal.h>
 #include "main.h"
 #include "tcp_state.h"
+#include "talkers.h"
 
 int main(int argc, char **argv)
 {
+	signal(SIGINT, sigint_handler);
 	int sock, status;
 	char *opt = argv[1]; 
 	
@@ -160,6 +163,7 @@ void parse_tcp(uint8_t *tcp, struct packet_info *pkt, ssize_t n)
 	printf("TCP dest port: %d\n", pkt->dst_port);
 		
 	update_tcp_conn(tcp_h, pkt, n);
+	update_talkers(pkt, n);
 }
 
 void parse_udp(uint8_t *udp) 
@@ -171,6 +175,7 @@ void parse_udp(uint8_t *udp)
 
 	printf("UDP src port: %d -> ", src_port);
 	printf("UDP dest port: %d\n\n", dest_port);
+	update_talkers(pkt, n);
 }
 
 void bpf_filter(int sock) 
@@ -201,4 +206,11 @@ void bpf_filter(int sock)
 		exit(1);
 	}
 }
+void sigint_handler(int sig) {
+	(void)sig;
+	
+	print_top_talkers();
 
+	exit(0);
+}
+}
