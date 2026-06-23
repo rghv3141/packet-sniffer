@@ -123,7 +123,7 @@ void parse_ipv4(struct ethhdr *eth, uint8_t buf[], struct packet_info *pkt, ssiz
 		parse_tcp(p, pkt, n);
 	}
 	if(ip_hdr->protocol == 17) {
-		parse_udp(p);
+		parse_udp(p, pkt, n);
 	}
 }
 
@@ -148,7 +148,7 @@ void parse_ipv6(struct ethhdr *eth, uint8_t *buf, struct packet_info *pkt, ssize
 		parse_tcp(p, pkt, n);
 	}
 	if(ip6_h->nexthdr == 17) {
-		parse_udp(p);
+		parse_udp(p, pkt, n);
 	}
 }
 
@@ -166,15 +166,15 @@ void parse_tcp(uint8_t *tcp, struct packet_info *pkt, ssize_t n)
 	update_talkers(pkt, n);
 }
 
-void parse_udp(uint8_t *udp) 
+void parse_udp(uint8_t *udp, struct packet_info *pkt, ssize_t n) 
 {
 	struct udphdr *udp_h = (struct udphdr *)udp;
 
-	uint16_t src_port = ntohs(udp_h->source);
-	uint16_t dest_port = ntohs(udp_h->dest);
+	pkt->src_port = ntohs(udp_h->source);
+	pkt->dst_port = ntohs(udp_h->dest);
 
-	printf("UDP src port: %d -> ", src_port);
-	printf("UDP dest port: %d\n\n", dest_port);
+	printf("UDP src port: %d -> ", pkt->src_port);
+	printf("UDP dest port: %d\n\n", pkt->dst_port);
 	update_talkers(pkt, n);
 }
 
@@ -212,5 +212,4 @@ void sigint_handler(int sig) {
 	print_top_talkers();
 
 	exit(0);
-}
 }

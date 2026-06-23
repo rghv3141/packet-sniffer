@@ -4,7 +4,7 @@
 struct talker {
 	struct packet_info key;
 	uint64_t bytes;
-}
+};
 
 void update_talkers(struct packet_info *, ssize_t );
 struct talker *find_talker(struct packet_info *);
