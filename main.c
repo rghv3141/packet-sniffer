@@ -78,15 +78,17 @@ int process_packet(uint8_t *buf, ssize_t n)
 	struct ethhdr *eth = (struct ethhdr *)buf;
 	parse_eth(eth);
 //	printf("0x%04x\n",ntohs(eth->h_proto));
-
+	struct syn_source syn;
 	if(ntohs(eth->h_proto) == 0x0800) {
 		pkt->ipv6 = 0;
-		parse_ipv4(eth, buf, pkt, n);
+		syn.ipv6 = 0;
+		parse_ipv4(eth, buf, pkt, &syn, n);
 	}
 
 	else if (ntohs(eth->h_proto) == 0x86dd) {
 		pkt->ipv6 = 1;
-		parse_ipv6(eth, buf, pkt, n);
+		syn.ipv6 = 1;
+		parse_ipv6(eth, buf, pkt, &syn, n);
 	}
 	return 0;
 }
@@ -98,7 +100,7 @@ void parse_eth(struct ethhdr *eth) {
 }
 
 
-void parse_ipv4(struct ethhdr *eth, uint8_t buf[], struct packet_info *pkt, ssize_t n) {
+void parse_ipv4(struct ethhdr *eth, uint8_t buf[], struct packet_info *pkt, struct syn_entry *syn, ssize_t n) {
 	
 	uint8_t *ip = buf + sizeof(struct ethhdr);
 	struct iphdr *ip_hdr = (struct iphdr *)ip;
@@ -110,7 +112,8 @@ void parse_ipv4(struct ethhdr *eth, uint8_t buf[], struct packet_info *pkt, ssiz
 	else printf("src IPv4: %s -> ", src);
 
 	pkt->ipv4_src = ip_hdr->saddr;
-
+	syn->ipv4_src = ip_hdr->saddr;
+	
 	char dest[INET_ADDRSTRLEN];
 	if(inet_ntop(AF_INET, &ip_hdr->daddr, dest, INET_ADDRSTRLEN) == NULL) {
 		perror("inet_ntop()");
@@ -128,7 +131,7 @@ void parse_ipv4(struct ethhdr *eth, uint8_t buf[], struct packet_info *pkt, ssiz
 }
 
 
-void parse_ipv6(struct ethhdr *eth, uint8_t *buf, struct packet_info *pkt, ssize_t n) {
+void parse_ipv6(struct ethhdr *eth, uint8_t *buf, struct packet_info *pkt, struct syn_entry *syn, ssize_t n) {
     	
 	struct ipv6hdr *ip6_h = (struct ipv6hdr *)(buf + sizeof(struct ethhdr));
 	uint8_t *p = buf + sizeof(struct ethhdr) + sizeof(struct ipv6hdr);
@@ -137,6 +140,7 @@ void parse_ipv6(struct ethhdr *eth, uint8_t *buf, struct packet_info *pkt, ssize
 	else printf("src IPv6: %s -> ", src);
 
 	pkt->ipv6_src = ip6_h->saddr;
+	syn->ipv6_src = ip6_h->saddr;
 
 	char dest[INET6_ADDRSTRLEN];
         if(inet_ntop(AF_INET6, &ip6_h->daddr, dest, sizeof(dest)) == NULL) perror("inet_ntop ipv6");
@@ -145,18 +149,19 @@ void parse_ipv6(struct ethhdr *eth, uint8_t *buf, struct packet_info *pkt, ssize
 	pkt->ipv6_dst = ip6_h->daddr;
 
 	if(ip6_h->nexthdr == 6) {
-		parse_tcp(p, pkt, n);
+		parse_tcp(p, pkt, syn, n);
 	}
 	if(ip6_h->nexthdr == 17) {
 		parse_udp(p, pkt, n);
 	}
 }
 
-void parse_tcp(uint8_t *tcp, struct packet_info *pkt, ssize_t n) 
+void parse_tcp(uint8_t *tcp, struct packet_info *pkt, struct syn_entry *syn, ssize_t n) 
 {
 	struct tcphdr *tcp_h = (struct tcphdr *)tcp;
 
 	pkt->src_port = ntohs(tcp_h->source);
+	syn->dst_port = ntohs(tcp_h->dest);
 	pkt->dst_port = ntohs(tcp_h->dest);
 
 	printf("TCP src port: %d -> ", pkt->src_port);
@@ -164,6 +169,9 @@ void parse_tcp(uint8_t *tcp, struct packet_info *pkt, ssize_t n)
 		
 	update_tcp_conn(tcp_h, pkt, n);
 	update_talkers(pkt, n);
+	if (tcp_h->syn) {
+		update_syn_entry(syn);
+	}
 }
 
 void parse_udp(uint8_t *udp, struct packet_info *pkt, ssize_t n) 
