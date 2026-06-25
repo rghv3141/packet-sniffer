@@ -1,4 +1,6 @@
-
+#include <stdint.h>
+#include <sys/types.h>
+#include <netinet/in.h>
 struct syn_source {
 	uint8_t ipv6;
 	
@@ -8,13 +10,13 @@ struct syn_source {
 	};
 	
 	uint16_t port;
-}
+};
 
 struct syn_entry {
 	struct syn_source key;
 	uint16_t ports[1024];
 	ssize_t port_count;
-}
+};
 
 void update_syn_entry(struct syn_source *);
 void create_syn_entry(struct syn_source *);

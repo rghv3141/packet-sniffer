@@ -4,7 +4,7 @@ CFLAGS = -Wall -Wextra -Wpedantic -g
 
 TARGET = sniffer
 
-SRCS = main.c tcp_state.c talkers.c
+SRCS = main.c tcp_state.c talkers.c scan-detector.c
 
 OBJS = $(SRCS:.c=.o)
 

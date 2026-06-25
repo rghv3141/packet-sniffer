@@ -7,6 +7,7 @@
 #include <netinet/ether.h>
 #include <linux/if_ether.h>
 #include <netinet/in.h>
+#include "scan-detector.h"
 
 struct packet_info {
 	uint8_t ipv6;
@@ -24,14 +25,22 @@ struct packet_info {
 	uint16_t src_port;
 	uint16_t dst_port;
 
+};
+
+enum mode {
+	MODE_CAPTURE,
+	MODE_TCP,
+	MODE_TALKERS,
+	MODE_SCAN	
 };	
 
-void read_packet(int);
-int process_packet(uint8_t *, ssize_t);
+void read_packet(int, enum mode);
+int process_packet(uint8_t *, enum mode, ssize_t);
 void parse_eth(struct ethhdr *);
-void parse_ipv4(struct ethhdr *, uint8_t *, struct packet_info *, ssize_t);
-void parse_ipv6(struct ethhdr *, uint8_t *, struct packet_info *, ssize_t);
-void parse_tcp(uint8_t *, struct packet_info *, ssize_t);
-void parse_udp(uint8_t *, struct packet_info *, ssize_t);
-void bpf_filter(int);
+void parse_ipv4(struct ethhdr *, uint8_t *, struct packet_info *,struct syn_source *, enum mode, ssize_t);
+void parse_ipv6(struct ethhdr *, uint8_t *, struct packet_info *,struct syn_source *, enum mode, ssize_t);
+void parse_tcp(uint8_t *, struct packet_info *, struct syn_source *, enum mode, ssize_t);
+void parse_udp(uint8_t *, struct packet_info *, enum mode, ssize_t);
+void bpf_filter(int, enum mode);
+enum mode parse_mode(const char *);
 void sigint_handler(int);

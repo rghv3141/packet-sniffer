@@ -1,5 +1,7 @@
 #include "scan-detector.h"
 #include <string.h>
+#include <stdio.h>
+#include <arpa/inet.h>
 
 #define MAX_SYNS 1024
 

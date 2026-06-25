@@ -17,12 +17,19 @@
 #include "main.h"
 #include "tcp_state.h"
 #include "talkers.h"
+#include "scan-detector.h"
+#include <string.h>
 
 int main(int argc, char **argv)
 {
 	signal(SIGINT, sigint_handler);
 	int sock, status;
-	char *opt = argv[1]; 
+	char *interface = argv[1]; 
+	if(argc != 3) {
+		fprintf(stderr, "Usage: ./sniffer <interface> [cature | tcp | talkers | scan]\n");
+		return 1;
+	}	
+	enum mode mode = parse_mode(argv[2]);
 	
 	sock = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_IP));
 	if (sock < 0) {
@@ -33,7 +40,7 @@ int main(int argc, char **argv)
 	struct sockaddr_ll sll = {
         	.sll_family = AF_PACKET,
         	.sll_protocol = htons(ETH_P_ALL),
-        	.sll_ifindex = if_nametoindex(opt),
+        	.sll_ifindex = if_nametoindex(interface),
 	};
 
 	if (bind(sock, (struct sockaddr *)&sll, sizeof(sll)) != 0) {
@@ -42,7 +49,7 @@ int main(int argc, char **argv)
 	}
 
 	struct packet_mreq mreq = {
-		.mr_ifindex = if_nametoindex(opt),
+		.mr_ifindex = if_nametoindex(interface),
 		.mr_type = PACKET_MR_PROMISC,
 	};
 
@@ -50,19 +57,32 @@ int main(int argc, char **argv)
 		perror("setsockopt promiscuous mode");
 
 	}
-	bpf_filter(sock); 
-	read_packet(sock);
+	bpf_filter(sock, mode); 
+	read_packet(sock, mode);
 	return 0;
 }
 
-void read_packet(int sock)
+enum mode parse_mode(const char *arg) {
+	if(strcmp(arg, "capture") == 0)
+		return MODE_CAPTURE;
+	if(strcmp(arg, "tcp") == 0)
+		return MODE_TCP;
+	if(strcmp(arg, "talkers") == 0)
+		return MODE_TALKERS;
+	if(strcmp(arg, "scan") == 0)
+		return MODE_SCAN;
+	fprintf(stderr, "Usage: ./sniffer <interface> [capture|tcp|talkers|scan]\n");
+	exit(EXIT_FAILURE);	
+}
+
+void read_packet(int sock, enum mode mode)
 {
 	int status;
 	uint8_t buf[65536];
 	while(1) {
 		ssize_t n = recvfrom(sock, buf, sizeof(buf), 0, NULL, NULL);
 
-		status = process_packet(buf, n);
+		status = process_packet(buf, mode, n);
 
 		if(status != 0) {
 			perror("packet processing");
@@ -71,7 +91,7 @@ void read_packet(int sock)
 	}
 }
 
-int process_packet(uint8_t *buf, ssize_t n)
+int process_packet(uint8_t *buf, enum mode mode, ssize_t n)
 {	
 	struct packet_info info;
 	struct packet_info *pkt = &info;
@@ -82,13 +102,13 @@ int process_packet(uint8_t *buf, ssize_t n)
 	if(ntohs(eth->h_proto) == 0x0800) {
 		pkt->ipv6 = 0;
 		syn.ipv6 = 0;
-		parse_ipv4(eth, buf, pkt, &syn, n);
+		parse_ipv4(eth, buf, pkt, &syn, mode, n);
 	}
 
 	else if (ntohs(eth->h_proto) == 0x86dd) {
 		pkt->ipv6 = 1;
 		syn.ipv6 = 1;
-		parse_ipv6(eth, buf, pkt, &syn, n);
+		parse_ipv6(eth, buf, pkt, &syn, mode, n);
 	}
 	return 0;
 }
@@ -100,7 +120,7 @@ void parse_eth(struct ethhdr *eth) {
 }
 
 
-void parse_ipv4(struct ethhdr *eth, uint8_t buf[], struct packet_info *pkt, struct syn_entry *syn, ssize_t n) {
+void parse_ipv4(struct ethhdr *eth, uint8_t buf[], struct packet_info *pkt, struct syn_source *syn, enum mode mode, ssize_t n) {
 	
 	uint8_t *ip = buf + sizeof(struct ethhdr);
 	struct iphdr *ip_hdr = (struct iphdr *)ip;
@@ -123,15 +143,15 @@ void parse_ipv4(struct ethhdr *eth, uint8_t buf[], struct packet_info *pkt, stru
 	pkt->ipv4_dest = ip_hdr->daddr;	
 
 	if(ip_hdr->protocol == 6) {
-		parse_tcp(p, pkt, n);
+		parse_tcp(p, pkt, syn, mode, n);
 	}
 	if(ip_hdr->protocol == 17) {
-		parse_udp(p, pkt, n);
+		parse_udp(p, pkt, mode, n);
 	}
 }
 
 
-void parse_ipv6(struct ethhdr *eth, uint8_t *buf, struct packet_info *pkt, struct syn_entry *syn, ssize_t n) {
+void parse_ipv6(struct ethhdr *eth, uint8_t *buf, struct packet_info *pkt, struct syn_source *syn, enum mode mode, ssize_t n) {
     	
 	struct ipv6hdr *ip6_h = (struct ipv6hdr *)(buf + sizeof(struct ethhdr));
 	uint8_t *p = buf + sizeof(struct ethhdr) + sizeof(struct ipv6hdr);
@@ -149,32 +169,44 @@ void parse_ipv6(struct ethhdr *eth, uint8_t *buf, struct packet_info *pkt, struc
 	pkt->ipv6_dst = ip6_h->daddr;
 
 	if(ip6_h->nexthdr == 6) {
-		parse_tcp(p, pkt, syn, n);
+		parse_tcp(p, pkt, syn, mode, n);
 	}
 	if(ip6_h->nexthdr == 17) {
-		parse_udp(p, pkt, n);
+		parse_udp(p, pkt, mode, n);
 	}
 }
 
-void parse_tcp(uint8_t *tcp, struct packet_info *pkt, struct syn_entry *syn, ssize_t n) 
+void parse_tcp(uint8_t *tcp, struct packet_info *pkt, struct syn_source *syn, enum mode mode, ssize_t n) 
 {
 	struct tcphdr *tcp_h = (struct tcphdr *)tcp;
 
 	pkt->src_port = ntohs(tcp_h->source);
-	syn->dst_port = ntohs(tcp_h->dest);
+	syn->port = ntohs(tcp_h->dest);
 	pkt->dst_port = ntohs(tcp_h->dest);
 
 	printf("TCP src port: %d -> ", pkt->src_port);
 	printf("TCP dest port: %d\n", pkt->dst_port);
-		
-	update_tcp_conn(tcp_h, pkt, n);
-	update_talkers(pkt, n);
-	if (tcp_h->syn) {
-		update_syn_entry(syn);
-	}
+	switch (mode) {
+
+        	case MODE_TCP:
+                	update_tcp_conn(tcp_h, pkt, n);
+                	break;
+
+        	case MODE_TALKERS:
+                	update_talkers(pkt, n);
+                	break;
+
+       	 	case MODE_SCAN:
+         	       	if (tcp_h->syn && !tcp_h->ack)
+                	        update_syn_entry(syn);
+			break;
+
+        	case MODE_CAPTURE:
+                	break;
+        }
 }
 
-void parse_udp(uint8_t *udp, struct packet_info *pkt, ssize_t n) 
+void parse_udp(uint8_t *udp, struct packet_info *pkt, enum mode mode, ssize_t n) 
 {
 	struct udphdr *udp_h = (struct udphdr *)udp;
 
@@ -183,35 +215,62 @@ void parse_udp(uint8_t *udp, struct packet_info *pkt, ssize_t n)
 
 	printf("UDP src port: %d -> ", pkt->src_port);
 	printf("UDP dest port: %d\n\n", pkt->dst_port);
-	update_talkers(pkt, n);
+	if(mode == MODE_TALKERS)
+		update_talkers(pkt, n);
 }
 
-void bpf_filter(int sock) 
-{
-	struct sock_filter code[] = {
-        { 0x28,  0,  0, 0x0000000c },	//0  	Load ethertype 
-        { 0x15,  0,  3, 0x000086dd },	//1	compare with Ipv6		
-        { 0x30,  0,  0, 0x00000014 },	//2	load protocol for ipv6
-        { 0x15,  5,  0, 0x00000006 },	//3	for TCP
-        { 0x15,  5,  5, 0x00000011 },	//4	for UDP if not UDP, reject
-        { 0x15,  0,  4, 0x00000800 },	//5	check if Ipv4
-        { 0x30,  0,  0, 0x00000017 },	//6	Load protocol
-        { 0x15,  1,  0, 0x00000006 },	//7	for tcp
-	{ 0x15,  1,  1, 0x00000011 },	//8	for udp 
-	{ 0x06,  0,  0, 0x0000ffff },	//9	accept packet
-	{ 0x06,  0,  0, 0x00000000 },	//10	drop packet
-	};
+void bpf_filter(int sock, enum mode mode) 
+{	
+	if (mode == MODE_CAPTURE || mode == MODE_TALKERS) {
+		struct sock_filter code1[] = {
+        	{ 0x28,  0,  0, 0x0000000c },	//0  	Load ethertype 
+        	{ 0x15,  0,  3, 0x000086dd },	//1	compare with Ipv6		
+        	{ 0x30,  0,  0, 0x00000014 },	//2	load protocol for ipv6
+        	{ 0x15,  5,  0, 0x00000006 },	//3	for TCP
+        	{ 0x15,  4,  5, 0x00000011 },	//4	for UDP if not UDP, reject
+        	{ 0x15,  0,  4, 0x00000800 },	//5	check if Ipv4
+        	{ 0x30,  0,  0, 0x00000017 },	//6	Load protocol
+       		{ 0x15,  1,  0, 0x00000006 },	//7	for tcp
+		{ 0x15,  0,  1, 0x00000011 },	//8	for udp 
+		{ 0x06,  0,  0, 0x0000ffff },	//9	accept packet
+		{ 0x06,  0,  0, 0x00000000 },	//10	drop packet
+		};
 	
-	struct sock_fprog bpf = {
-        .len = sizeof(code)/sizeof(code[0]),
-        .filter = code,
-	};
+		struct sock_fprog bpf1 = {
+        		.len = sizeof(code1)/sizeof(code1[0]),
+       			.filter = code1,
+			};
 	
-	int ret = setsockopt(sock, SOL_SOCKET, SO_ATTACH_FILTER, &bpf, sizeof(bpf));
+		int ret1 = setsockopt(sock, SOL_SOCKET, SO_ATTACH_FILTER, &bpf1, sizeof(bpf1));
 
-	if (ret < 0) {
-		perror("setsockopt bpf_filter");
-		exit(1);
+		if (ret1 < 0) {
+			perror("setsockopt bpf_filter");
+			exit(1);
+		}
+	}
+	if (mode == MODE_TCP || mode == MODE_SCAN) {
+		struct sock_filter code2[] = {
+        	{ 0x28,  0,  0, 0x0000000c },	//0  	Load ethertype 
+        	{ 0x15,  0,  2, 0x000086dd },	//1	compare with Ipv6		
+        	{ 0x30,  0,  0, 0x00000014 },	//2	load protocol for ipv6
+        	{ 0x15,  3,  4, 0x00000006 },	//3	for TCP
+        	{ 0x15,  0,  3, 0x00000800 },	//5	check if Ipv4
+        	{ 0x30,  0,  0, 0x00000017 },	//6	Load protocol
+        	{ 0x15,  0,  1, 0x00000006 },	//7	for tcp
+		{ 0x06,  0,  0, 0x0000ffff },	//9	accept packet
+		{ 0x06,  0,  0, 0x00000000 },	//10	drop packet
+		};
+	
+		struct sock_fprog bpf2 = {
+        		.len = sizeof(code2)/sizeof(code2[0]),
+        		.filter = code2,
+		};
+	
+		int ret2 = setsockopt(sock, SOL_SOCKET, SO_ATTACH_FILTER, &bpf2, sizeof(bpf2));
+		if (ret2 < 0) {
+			perror("setsockopt bpf_filter");
+			exit(1);
+		}
 	}
 }
 void sigint_handler(int sig) {
