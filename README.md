@@ -20,7 +20,11 @@ Compile the project using:
 make
 ```
 
-## Running
+## Run
 ```bash
 ./sniffer <interface> <mode>
+```
+Example
+```bash
+./sniffer wlo1 capture
 ```
