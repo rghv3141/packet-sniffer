@@ -11,3 +11,16 @@ The application supports 4 operating mode
 | tcp	| Tracks TCP connections and maintains a simplified TCP state machine.|
 | talkers	| Records traffic statistics and reports the top 10 talkers by byte count when the program exits.|
 |scan |	Detects SYN port scans by tracking unique destination ports contacted by each source IP address.|
+
+## Building
+
+Compile the project using:
+
+```bash
+make
+```
+
+## Running
+```bash
+./sniffer <interface> <mode>
+```
